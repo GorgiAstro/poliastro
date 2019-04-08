@@ -14,6 +14,22 @@ from poliastro.twobody import Orbit
 from poliastro.twobody.propagation import cowell, kepler, mean_motion
 from poliastro.util import norm
 
+# Orekit imports
+
+import orekit
+orekit.initVM()
+
+import os
+from orekit.pyhelpers import setup_orekit_curdir
+setup_orekit_curdir(os.path.join('..', '..', '..', '..', 'data', 'orekit-data.zip'))
+
+from org.hipparchus.geometry.euclidean.threed import Vector3D
+from org.orekit.time import AbsoluteDate
+from org.orekit.utils import TimeStampedPVCoordinates, Constants as orekit_constants
+from org.orekit.frames import FramesFactory
+from org.orekit.orbits import CartesianOrbit
+from org.orekit.propagation.analytical import KeplerianPropagator
+
 
 @pytest.mark.parametrize(
     "ecc",
@@ -50,6 +66,34 @@ def test_propagation(method):
     ss1 = ss0.propagate(tof, method=method)
 
     r, v = ss1.rv()
+
+    assert_quantity_allclose(r, expected_r, rtol=1e-5)
+    assert_quantity_allclose(v, expected_v, rtol=1e-4)
+
+
+def test_propagation_kepler_orekit():
+    # Data from Vallado, example 2.4
+    r0 = [1131.340, -2282.343, 6672.423] * u.km
+    v0 = [-5.64305, 4.30333, 2.42879] * u.km / u.s
+
+    ss0 = Orbit.from_vectors(Earth, r0, v0)
+    tof = 40 * u.min
+    ss1 = ss0.propagate(tof, method=kepler)
+
+    r, v = ss1.rv()
+
+    # Propagating using Orekit
+    start_date = AbsoluteDate()
+    pv_start = TimeStampedPVCoordinates(start_date,
+                                        Vector3D(r0.to_value(unit='m').tolist()),
+                                        Vector3D(v0.to_value(unit='m/s').tolist()))
+    inertial_frame = FramesFactory.getGCRF()
+    orbit = CartesianOrbit(pv_start, inertial_frame, orekit_constants.EIGEN5C_EARTH_MU)
+    keplerian_propagator = KeplerianPropagator(orbit)
+    end_date = start_date.shiftedBy(tof.to_value(unit='s'))
+    pv_end = keplerian_propagator.getPVCoordinates(end_date, inertial_frame)
+    expected_r = pv_end.getPosition().toArray() * u.m
+    expected_v = pv_end.getVelocity().toArray() * u.m / u.s
 
     assert_quantity_allclose(r, expected_r, rtol=1e-5)
     assert_quantity_allclose(v, expected_v, rtol=1e-4)
