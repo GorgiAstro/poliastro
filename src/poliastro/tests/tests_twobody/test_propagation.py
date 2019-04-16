@@ -161,6 +161,35 @@ def test_propagation_hyperbolic():
     assert_quantity_allclose(norm(v), expected_v_norm, rtol=1e-3)
 
 
+def test_propagation_hyperbolic_orekit():
+    # Data from Curtis, example 3.5
+    r0 = [Earth.R.to(u.km).value + 300, 0, 0] * u.km
+    v0 = [0, 15, 0] * u.km / u.s
+    # expected_r_norm = 163180 * u.km
+    # expected_v_norm = 10.51 * u.km / u.s
+
+    ss0 = Orbit.from_vectors(Earth, r0, v0)
+    tof = 14941 * u.s
+    ss1 = ss0.propagate(tof)
+    r, v = ss1.rv()
+
+    # Propagating using Orekit
+    start_date = AbsoluteDate()
+    pv_start = TimeStampedPVCoordinates(start_date,
+                                        Vector3D(r0.to_value(unit='m').tolist()),
+                                        Vector3D(v0.to_value(unit='m/s').tolist()))
+    inertial_frame = FramesFactory.getGCRF()
+    orbit = CartesianOrbit(pv_start, inertial_frame, orekit_constants.EIGEN5C_EARTH_MU)
+    keplerian_propagator = KeplerianPropagator(orbit)
+    end_date = start_date.shiftedBy(tof.to_value(unit='s'))
+    pv_end = keplerian_propagator.getPVCoordinates(end_date, inertial_frame)
+    expected_r = pv_end.getPosition().toArray() * u.m
+    expected_v = pv_end.getVelocity().toArray() * u.m / u.s
+
+    assert_quantity_allclose(r, expected_r, rtol=1e-4)
+    assert_quantity_allclose(v, expected_v, rtol=1e-3)
+
+
 def test_propagation_mean_motion_parabolic():
     # example from Howard Curtis (3rd edition), section 3.5, problem 3.15
     p = 2.0 * 6600 * u.km
